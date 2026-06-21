@@ -17,6 +17,8 @@ Common options:
                             Default: WT_ND,WT_CCD,KO_ND,KO_CCD
   --condition-col COL       Metadata column for conditions. Default: orig.ident
   --group-col COL           Metadata column for cell types. Default: celltype2
+  --celltype-rename MAP     Comma-separated old=new celltype rename map.
+                            Default: CD4+ T=ab-T,STromal=Fibroblasts,Stromal=Fibroblasts
   --assay NAME              Seurat assay. Default: RNA
   --layer NAME              Seurat v5 layer or v4 slot. Default: data
   --workers N               CellChat future workers. Default: 4
@@ -31,7 +33,9 @@ Run control:
   --skip-analysis           Do not run/reuse CellChat analysis objects.
   --skip-summary            Do not generate pairwise CSV summaries.
   --skip-plot               Do not generate CellChat pathway plots.
+  --skip-overview           Do not generate four-group overview tables/plots.
   --only-plot               Only generate plots from existing objects/tables.
+  --only-overview           Only generate four-group overview tables/plots.
   --dry-run                 Print resolved settings and exit.
 
 Environment:
@@ -59,6 +63,7 @@ OUTDIR="results/cellchat"
 CONDITIONS="WT_ND,WT_CCD,KO_ND,KO_CCD"
 CONDITION_COL="orig.ident"
 GROUP_COL="celltype2"
+CELLTYPE_RENAME="CD4+ T=ab-T,STromal=Fibroblasts,Stromal=Fibroblasts"
 ASSAY="RNA"
 LAYER="data"
 WORKERS="4"
@@ -77,11 +82,15 @@ AGGREGATE_WIDTH="4.8"
 AGGREGATE_HEIGHT="4.8"
 CONTRIBUTION_WIDTH="4.8"
 CONTRIBUTION_HEIGHT="3.0"
+OVERVIEW_WIDTH="14"
+OVERVIEW_HEIGHT="10"
+OVERVIEW_DPI="300"
 DPI="300"
 INSTALL=false
 RUN_ANALYSIS=true
 RUN_SUMMARY=true
 RUN_PLOT=true
+RUN_OVERVIEW=true
 FORCE=false
 DRY_RUN=false
 
@@ -92,6 +101,7 @@ while [[ $# -gt 0 ]]; do
     --conditions) need_value "$@"; CONDITIONS="$2"; shift 2 ;;
     --condition-col) need_value "$@"; CONDITION_COL="$2"; shift 2 ;;
     --group-col) need_value "$@"; GROUP_COL="$2"; shift 2 ;;
+    --celltype-rename) need_value "$@"; CELLTYPE_RENAME="$2"; shift 2 ;;
     --assay) need_value "$@"; ASSAY="$2"; shift 2 ;;
     --layer) need_value "$@"; LAYER="$2"; shift 2 ;;
     --workers) need_value "$@"; WORKERS="$2"; shift 2 ;;
@@ -110,14 +120,19 @@ while [[ $# -gt 0 ]]; do
     --aggregate-height) need_value "$@"; AGGREGATE_HEIGHT="$2"; shift 2 ;;
     --contribution-width) need_value "$@"; CONTRIBUTION_WIDTH="$2"; shift 2 ;;
     --contribution-height) need_value "$@"; CONTRIBUTION_HEIGHT="$2"; shift 2 ;;
+    --overview-width) need_value "$@"; OVERVIEW_WIDTH="$2"; shift 2 ;;
+    --overview-height) need_value "$@"; OVERVIEW_HEIGHT="$2"; shift 2 ;;
+    --overview-dpi) need_value "$@"; OVERVIEW_DPI="$2"; shift 2 ;;
     --dpi) need_value "$@"; DPI="$2"; shift 2 ;;
     --install) INSTALL=true; shift ;;
-    --only-install) INSTALL=true; RUN_ANALYSIS=false; RUN_SUMMARY=false; RUN_PLOT=false; shift ;;
+    --only-install) INSTALL=true; RUN_ANALYSIS=false; RUN_SUMMARY=false; RUN_PLOT=false; RUN_OVERVIEW=false; shift ;;
     --force) FORCE=true; shift ;;
     --skip-analysis) RUN_ANALYSIS=false; shift ;;
     --skip-summary) RUN_SUMMARY=false; shift ;;
     --skip-plot) RUN_PLOT=false; shift ;;
-    --only-plot) RUN_ANALYSIS=false; RUN_SUMMARY=false; RUN_PLOT=true; shift ;;
+    --skip-overview) RUN_OVERVIEW=false; shift ;;
+    --only-plot) RUN_ANALYSIS=false; RUN_SUMMARY=false; RUN_PLOT=true; RUN_OVERVIEW=false; shift ;;
+    --only-overview) RUN_ANALYSIS=false; RUN_SUMMARY=false; RUN_PLOT=false; RUN_OVERVIEW=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -141,6 +156,7 @@ CellChat full pipeline settings
   conditions:         ${CONDITIONS}
   condition_col:      ${CONDITION_COL}
   group_col:          ${GROUP_COL}
+  celltype_rename:    ${CELLTYPE_RENAME}
   assay/layer:        ${ASSAY}/${LAYER}
   workers/nboot:      ${WORKERS}/${NBOOT}
   min_cells:          ${MIN_CELLS}
@@ -149,6 +165,7 @@ CellChat full pipeline settings
   run_analysis:       ${RUN_ANALYSIS}
   run_summary:        ${RUN_SUMMARY}
   run_plot:           ${RUN_PLOT}
+  run_overview:       ${RUN_OVERVIEW}
   force:              ${FORCE}
   env_prefix:         ${ENV_PREFIX}
 SETTINGS
@@ -259,6 +276,7 @@ export PIPE_OUTDIR="$OUTDIR"
 export PIPE_CONDITIONS="$CONDITIONS"
 export PIPE_CONDITION_COL="$CONDITION_COL"
 export PIPE_GROUP_COL="$GROUP_COL"
+export PIPE_CELLTYPE_RENAME="$CELLTYPE_RENAME"
 export PIPE_ASSAY="$ASSAY"
 export PIPE_LAYER="$LAYER"
 export PIPE_WORKERS="$WORKERS"
@@ -278,6 +296,9 @@ export PIPE_AGGREGATE_WIDTH="$AGGREGATE_WIDTH"
 export PIPE_AGGREGATE_HEIGHT="$AGGREGATE_HEIGHT"
 export PIPE_CONTRIBUTION_WIDTH="$CONTRIBUTION_WIDTH"
 export PIPE_CONTRIBUTION_HEIGHT="$CONTRIBUTION_HEIGHT"
+export PIPE_OVERVIEW_WIDTH="$OVERVIEW_WIDTH"
+export PIPE_OVERVIEW_HEIGHT="$OVERVIEW_HEIGHT"
+export PIPE_OVERVIEW_DPI="$OVERVIEW_DPI"
 export PIPE_DPI="$DPI"
 
 if [[ "$RUN_ANALYSIS" == true ]]; then
@@ -304,6 +325,7 @@ cfg <- list(
   layer = env_default("PIPE_LAYER", "data"),
   condition_col = env_default("PIPE_CONDITION_COL", "orig.ident"),
   group_col = env_default("PIPE_GROUP_COL", "celltype2"),
+  celltype_rename = env_default("PIPE_CELLTYPE_RENAME", ""),
   conditions = env_default("PIPE_CONDITIONS", "WT_ND,WT_CCD,KO_ND,KO_CCD"),
   min_cells = as.integer(env_default("PIPE_MIN_CELLS", "10")),
   workers = as.integer(env_default("PIPE_WORKERS", "4")),
@@ -387,6 +409,72 @@ run_one_condition <- function(condition, data_mat, meta, cfg, db_use, object_dir
   cellchat
 }
 
+parse_rename_map <- function(rename_map) {
+  if (!nzchar(rename_map)) {
+    return(data.frame(old = character(), new = character(), stringsAsFactors = FALSE))
+  }
+  pairs <- trimws(strsplit(rename_map, ",", fixed = TRUE)[[1]])
+  pairs <- pairs[nzchar(pairs)]
+  if (length(pairs) == 0) {
+    return(data.frame(old = character(), new = character(), stringsAsFactors = FALSE))
+  }
+  parsed <- lapply(pairs, function(pair) {
+    kv <- strsplit(pair, "=", fixed = TRUE)[[1]]
+    if (length(kv) != 2 || !nzchar(trimws(kv[[1]])) || !nzchar(trimws(kv[[2]]))) {
+      stop("Invalid --celltype-rename entry: ", pair, call. = FALSE)
+    }
+    data.frame(old = trimws(kv[[1]]), new = trimws(kv[[2]]), stringsAsFactors = FALSE)
+  })
+  do.call(rbind, parsed)
+}
+
+apply_celltype_rename <- function(meta, cfg, table_dir) {
+  rename_df <- parse_rename_map(cfg$celltype_rename)
+  if (nrow(rename_df) == 0) {
+    return(meta)
+  }
+
+  before <- as.character(meta[[cfg$group_col]])
+  after <- before
+  for (i in seq_len(nrow(rename_df))) {
+    after[after == rename_df$old[[i]]] <- rename_df$new[[i]]
+  }
+  meta[[cfg$group_col]] <- factor(after)
+
+  summary_df <- do.call(rbind, lapply(seq_len(nrow(rename_df)), function(i) {
+    renamed <- before == rename_df$old[[i]]
+    data.frame(
+      old = rename_df$old[[i]],
+      new = rename_df$new[[i]],
+      n_cells_matching_old_before = sum(renamed, na.rm = TRUE),
+      n_cells_renamed = sum(renamed & after == rename_df$new[[i]], na.rm = TRUE),
+      n_cells_with_new_label_after = sum(after == rename_df$new[[i]], na.rm = TRUE),
+      stringsAsFactors = FALSE
+    )
+  }))
+  write.csv(summary_df, file.path(table_dir, "cellchat_celltype_rename_summary.csv"), row.names = FALSE)
+
+  condition_df <- do.call(rbind, lapply(seq_len(nrow(rename_df)), function(i) {
+    old <- rename_df$old[[i]]
+    new <- rename_df$new[[i]]
+    conditions <- sort(unique(as.character(meta[[cfg$condition_col]])))
+    data.frame(
+      old = old,
+      new = new,
+      condition = conditions,
+      n_cells_matching_old_before = as.integer(table(factor(as.character(meta[[cfg$condition_col]])[before == old], levels = conditions))),
+      n_cells_renamed = as.integer(table(factor(as.character(meta[[cfg$condition_col]])[before == old & after == new], levels = conditions))),
+      n_cells_with_new_label_after = as.integer(table(factor(as.character(meta[[cfg$condition_col]])[after == new], levels = conditions))),
+      stringsAsFactors = FALSE
+    )
+  }))
+  write.csv(condition_df, file.path(table_dir, "cellchat_celltype_rename_by_condition.csv"), row.names = FALSE)
+
+  message("Applied celltype rename map: ", cfg$celltype_rename)
+  print(summary_df)
+  meta
+}
+
 object_dir <- file.path(cfg$outdir, "objects")
 table_dir <- file.path(cfg$outdir, "tables")
 dir.create(object_dir, recursive = TRUE, showWarnings = FALSE)
@@ -412,6 +500,7 @@ if (length(missing_cols) > 0) {
   stop("Missing metadata columns: ", paste(missing_cols, collapse = ", "), call. = FALSE)
 }
 
+meta <- apply_celltype_rename(meta, cfg, table_dir)
 data_mat <- get_assay_layer(obj, cfg$assay, cfg$layer)
 conditions <- trimws(strsplit(cfg$conditions, ",", fixed = TRUE)[[1]])
 missing_conditions <- setdiff(conditions, unique(as.character(meta[[cfg$condition_col]])))
@@ -452,6 +541,16 @@ write.csv(run_summary, file.path(table_dir, "cellchat_run_input_summary.csv"), r
 object_list <- setNames(vector("list", length(conditions)), conditions)
 for (condition in conditions) {
   object_list[[condition]] <- run_one_condition(condition, data_mat, meta, cfg, db_use, object_dir)
+}
+
+all_celltypes <- unique(unlist(lapply(object_list, function(x) levels(x@idents))))
+need_lift <- any(!vapply(object_list, function(x) identical(levels(x@idents), all_celltypes), logical(1)))
+if (need_lift) {
+  message("Lifting CellChat objects to a shared cell type set: ", paste(all_celltypes, collapse = ", "))
+  object_list <- lapply(object_list, function(x) liftCellChat(x, group.new = all_celltypes))
+  for (condition in conditions) {
+    saveRDS(object_list[[condition]], file.path(object_dir, paste0(sanitize_name(condition), ".cellchat.rds")))
+  }
 }
 
 merged <- mergeCellChat(object_list, add.names = conditions, cell.prefix = TRUE)
@@ -504,7 +603,7 @@ extract_lr <- function(cellchat, condition, pvalue_threshold) {
     colnames(lr_meta)
   )
   lr <- lr %>% left_join(lr_meta[, keep_meta, drop = FALSE], by = "interaction_name")
-  lr %>% filter(prob > 0 | (!is.na(pval) & pval <= pvalue_threshold))
+  lr %>% filter(prob > 0)
 }
 
 extract_pathway <- function(cellchat, condition) {
@@ -883,6 +982,438 @@ write.csv(plot_log, file.path(outdir, paste0(signaling_file, "_plot_log.csv")), 
 message("Wrote ", nrow(file_summary), " plot files to ", outdir)
 message("Plot log written to ", file.path(outdir, paste0(signaling_file, "_plot_log.csv")))
 RS_PLOT
+fi
+
+if [[ "$RUN_OVERVIEW" == true ]]; then
+  "$RSCRIPT_BIN" - <<'RS_OVERVIEW' 2>&1 | tee "${LOG_DIR}/full_pipeline_overview.log"
+suppressPackageStartupMessages({
+  library(CellChat)
+  library(ggplot2)
+  library(grid)
+})
+
+env_default <- function(name, default = "") {
+  value <- Sys.getenv(name, unset = NA_character_)
+  if (is.na(value) || !nzchar(value)) default else value
+}
+
+sanitize_name <- function(x) gsub("[^A-Za-z0-9_.-]+", "_", x)
+
+plot_log <- data.frame(
+  plot = character(),
+  status = character(),
+  message = character(),
+  stringsAsFactors = FALSE
+)
+
+log_plot <- function(plot, status, message = "") {
+  assign(
+    "plot_log",
+    rbind(get("plot_log", envir = .GlobalEnv), data.frame(plot = plot, status = status, message = message)),
+    envir = .GlobalEnv
+  )
+}
+
+save_gg_safe <- function(plot_expr, filename, width, height, dpi) {
+  label <- basename(filename)
+  p <- try(force(plot_expr), silent = TRUE)
+  if (inherits(p, "try-error")) {
+    log_plot(label, "skipped", as.character(p))
+    return(invisible(FALSE))
+  }
+  ggsave(paste0(filename, ".pdf"), plot = p, width = width, height = height, useDingbats = FALSE, limitsize = FALSE)
+  ggsave(paste0(filename, ".png"), plot = p, width = width, height = height, dpi = dpi, limitsize = FALSE)
+  log_plot(label, "written", "")
+  invisible(TRUE)
+}
+
+save_base_safe <- function(plot_expr, filename, width, height, dpi) {
+  label <- basename(filename)
+  expr <- substitute(plot_expr)
+  env <- parent.frame()
+  ok <- TRUE
+  err_msg <- ""
+  pdf_file <- paste0(filename, ".pdf")
+  png_file <- paste0(filename, ".png")
+
+  pdf(pdf_file, width = width, height = height, useDingbats = FALSE)
+  res <- try(eval(expr, envir = env), silent = TRUE)
+  if (inherits(res, "try-error")) {
+    ok <- FALSE
+    err_msg <- as.character(res)
+  }
+  invisible(dev.off())
+
+  if (ok) {
+    png(png_file, width = width, height = height, units = "in", res = dpi)
+    res <- try(eval(expr, envir = env), silent = TRUE)
+    if (inherits(res, "try-error")) {
+      ok <- FALSE
+      err_msg <- as.character(res)
+    }
+    invisible(dev.off())
+  }
+
+  if (ok) {
+    log_plot(label, "written", "")
+  } else {
+    if (file.exists(pdf_file)) unlink(pdf_file)
+    if (file.exists(png_file)) unlink(png_file)
+    log_plot(label, "skipped", err_msg)
+  }
+  invisible(ok)
+}
+
+mat_to_long <- function(mat, condition, measure, celltypes = NULL) {
+  if (!is.null(celltypes)) {
+    grid <- expand.grid(source = celltypes, target = celltypes, stringsAsFactors = FALSE)
+    value_df <- as.data.frame(as.table(mat), stringsAsFactors = FALSE)
+    names(value_df) <- c("source", "target", "value")
+    out <- merge(grid, value_df, by = c("source", "target"), all.x = TRUE, sort = FALSE)
+    out$value[is.na(out$value)] <- 0
+  } else {
+    out <- as.data.frame(as.table(mat), stringsAsFactors = FALSE)
+    names(out) <- c("source", "target", "value")
+  }
+  out$condition <- condition
+  out$measure <- measure
+  out$value <- as.numeric(out$value)
+  out[, c("condition", "measure", "source", "target", "value")]
+}
+
+array_to_long <- function(arr, condition) {
+  if (is.null(arr) || length(arr) == 0 || length(dim(arr)) != 3) {
+    return(data.frame())
+  }
+  out <- as.data.frame(as.table(arr), stringsAsFactors = FALSE)
+  names(out) <- c("source", "target", "pathway_name", "value")
+  out$condition <- condition
+  out$value <- as.numeric(out$value)
+  out[, c("condition", "source", "target", "pathway_name", "value")]
+}
+
+make_wide_difference <- function(df, keys, conditions, value_name = "value") {
+  if (nrow(df) == 0) return(data.frame())
+  key_df <- unique(df[, keys, drop = FALSE])
+  out <- key_df
+  for (condition in conditions) {
+    sub <- df[df$condition == condition, c(keys, value_name), drop = FALSE]
+    names(sub)[ncol(sub)] <- condition
+    out <- merge(out, sub, by = keys, all.x = TRUE, sort = FALSE)
+  }
+  for (condition in conditions) {
+    if (!condition %in% colnames(out)) out[[condition]] <- 0
+    out[[condition]][is.na(out[[condition]])] <- 0
+  }
+  values <- as.matrix(out[, conditions, drop = FALSE])
+  max_idx <- max.col(values, ties.method = "first")
+  min_idx <- max.col(-values, ties.method = "first")
+  out$max_condition <- conditions[max_idx]
+  out$max_value <- values[cbind(seq_len(nrow(values)), max_idx)]
+  out$min_condition <- conditions[min_idx]
+  out$min_value <- values[cbind(seq_len(nrow(values)), min_idx)]
+  out$range_value <- out$max_value - out$min_value
+  out <- out[order(-out$range_value, out$max_condition), , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+
+base_outdir <- env_default("PIPE_OUTDIR", "results/cellchat")
+objects_dir <- file.path(base_outdir, "objects")
+tables_dir <- file.path(base_outdir, "tables")
+outdir <- file.path(base_outdir, "plots", "overview")
+conditions <- trimws(strsplit(env_default("PIPE_CONDITIONS", "WT_ND,WT_CCD,KO_ND,KO_CCD"), ",", fixed = TRUE)[[1]])
+width <- as.numeric(env_default("PIPE_OVERVIEW_WIDTH", "14"))
+height <- as.numeric(env_default("PIPE_OVERVIEW_HEIGHT", "10"))
+dpi <- as.integer(env_default("PIPE_OVERVIEW_DPI", "300"))
+
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
+
+objects <- setNames(vector("list", length(conditions)), conditions)
+for (condition in conditions) {
+  rds <- file.path(objects_dir, paste0(sanitize_name(condition), ".cellchat.rds"))
+  if (!file.exists(rds)) stop("Missing CellChat object: ", rds, call. = FALSE)
+  objects[[condition]] <- readRDS(rds)
+}
+
+merged_file <- file.path(objects_dir, "merged.cellchat.rds")
+if (!file.exists(merged_file)) stop("Missing merged CellChat object: ", merged_file, call. = FALSE)
+merged <- readRDS(merged_file)
+
+celltypes <- unique(unlist(lapply(objects, function(x) levels(x@idents))))
+need_lift <- any(!vapply(objects, function(x) identical(levels(x@idents), celltypes), logical(1)))
+if (need_lift) {
+  message("Lifting overview objects to a shared cell type set: ", paste(celltypes, collapse = ", "))
+  objects <- lapply(objects, function(x) liftCellChat(x, group.new = celltypes))
+  merged <- mergeCellChat(objects, add.names = conditions, cell.prefix = TRUE)
+}
+
+global_summary <- do.call(rbind, lapply(names(objects), function(condition) {
+  obj <- objects[[condition]]
+  data.frame(
+    condition = condition,
+    n_celltypes = length(levels(obj@idents)),
+    total_count = sum(obj@net$count, na.rm = TRUE),
+    total_weight = sum(obj@net$weight, na.rm = TRUE),
+    nonzero_count_edges = sum(obj@net$count > 0, na.rm = TRUE),
+    nonzero_weight_edges = sum(obj@net$weight > 0, na.rm = TRUE),
+    stringsAsFactors = FALSE
+  )
+}))
+write.csv(global_summary, file.path(tables_dir, "cellchat_four_group_global_summary.csv"), row.names = FALSE)
+
+network_long <- do.call(rbind, lapply(names(objects), function(condition) {
+  obj <- objects[[condition]]
+  rbind(
+    mat_to_long(obj@net$count, condition, "count", celltypes),
+    mat_to_long(obj@net$weight, condition, "weight", celltypes)
+  )
+}))
+network_wide <- do.call(rbind, lapply(c("count", "weight"), function(measure) {
+  tmp <- make_wide_difference(
+    network_long[network_long$measure == measure, , drop = FALSE],
+    keys = c("measure", "source", "target"),
+    conditions = conditions,
+    value_name = "value"
+  )
+  tmp
+}))
+write.csv(network_wide, file.path(tables_dir, "cellchat_four_group_network_difference_summary.csv"), row.names = FALSE)
+
+pathway_long <- do.call(rbind, lapply(names(objects), function(condition) {
+  array_to_long(objects[[condition]]@netP$prob, condition)
+}))
+pathway_wide <- make_wide_difference(
+  pathway_long,
+  keys = c("source", "target", "pathway_name"),
+  conditions = conditions,
+  value_name = "value"
+)
+write.csv(pathway_wide, file.path(tables_dir, "cellchat_four_group_pathway_difference_summary.csv"), row.names = FALSE)
+
+write.csv(
+  data.frame(
+    table = c(
+      "cellchat_four_group_global_summary",
+      "cellchat_four_group_network_difference_summary",
+      "cellchat_four_group_pathway_difference_summary"
+    ),
+    rows = c(nrow(global_summary), nrow(network_wide), nrow(pathway_wide)),
+    stringsAsFactors = FALSE
+  ),
+  file.path(tables_dir, "cellchat_four_group_overview_table_summary.csv"),
+  row.names = FALSE
+)
+
+bar_theme <- theme_classic(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5, size = 16),
+    legend.position = "none"
+  )
+
+save_gg_safe(
+  compareInteractions(
+    merged,
+    group = seq_along(conditions),
+    measure = "count",
+    show.legend = FALSE,
+    title.name = "Number of interactions"
+  ) + bar_theme,
+  file.path(outdir, "cellchat_overview_interaction_count_bar"),
+  width * 0.7,
+  height * 0.6,
+  dpi
+)
+
+save_gg_safe(
+  compareInteractions(
+    merged,
+    group = seq_along(conditions),
+    measure = "weight",
+    show.legend = FALSE,
+    title.name = "Interaction strength"
+  ) + bar_theme,
+  file.path(outdir, "cellchat_overview_interaction_weight_bar"),
+  width * 0.7,
+  height * 0.6,
+  dpi
+)
+
+network_heatmap <- function(measure) {
+  df <- network_long[network_long$measure == measure, , drop = FALSE]
+  df$source <- factor(df$source, levels = celltypes)
+  df$target <- factor(df$target, levels = rev(celltypes))
+  ggplot(df, aes(x = source, y = target, fill = value)) +
+    geom_tile(color = "white", linewidth = 0.25) +
+    facet_wrap(~ condition, nrow = 2) +
+    scale_fill_gradient(low = "white", high = if (measure == "count") "#B2182B" else "#2166AC") +
+    coord_equal() +
+    labs(x = "Source", y = "Target", fill = measure, title = paste("CellChat", measure, "by source-target pair")) +
+    theme_minimal(base_size = 11) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid = element_blank(),
+      strip.text = element_text(size = 13, face = "bold"),
+      plot.title = element_text(hjust = 0.5, size = 16)
+    )
+}
+
+save_gg_safe(
+  network_heatmap("count"),
+  file.path(outdir, "cellchat_overview_source_target_count_heatmap"),
+  width,
+  height,
+  dpi
+)
+
+save_gg_safe(
+  network_heatmap("weight"),
+  file.path(outdir, "cellchat_overview_source_target_weight_heatmap"),
+  width,
+  height,
+  dpi
+)
+
+save_gg_safe(
+  rankNet(
+    merged,
+    mode = "comparison",
+    stacked = TRUE,
+    do.stat = FALSE,
+    measure = "weight",
+    title = "Overall signaling information flow"
+  ) + theme_classic(base_size = 11),
+  file.path(outdir, "cellchat_overview_pathway_information_flow_rank_stacked"),
+  width,
+  height * 0.75,
+  dpi
+)
+
+count_edge_max <- max(unlist(lapply(objects, function(x) max(x@net$count, na.rm = TRUE))), na.rm = TRUE)
+weight_edge_max <- max(unlist(lapply(objects, function(x) max(x@net$weight, na.rm = TRUE))), na.rm = TRUE)
+pair_width <- max(width, 16)
+pair_height <- max(height, 18)
+
+save_base_safe(
+  {
+    oldpar <- par(no.readonly = TRUE)
+    on.exit(par(oldpar), add = TRUE)
+    par(mfrow = c(2, 2), mar = c(1, 1, 4, 1), xpd = TRUE)
+    for (condition in conditions) {
+      obj <- objects[[condition]]
+      group_size <- as.numeric(table(obj@idents))
+      netVisual_circle(
+        obj@net$count,
+        title.name = paste0(condition, " - interaction count"),
+        vertex.weight = group_size,
+        weight.scale = TRUE,
+        edge.weight.max = count_edge_max,
+        edge.width.max = 8,
+        vertex.size.max = 18,
+        vertex.label.cex = 0.75,
+        label.edge = FALSE
+      )
+    }
+  },
+  file.path(outdir, "cellchat_overview_network_count_circle_all_groups"),
+  width,
+  height,
+  dpi
+)
+
+save_base_safe(
+  {
+    oldpar <- par(no.readonly = TRUE)
+    on.exit(par(oldpar), add = TRUE)
+    par(mfrow = c(2, 2), mar = c(1, 1, 4, 1), xpd = TRUE)
+    for (condition in conditions) {
+      obj <- objects[[condition]]
+      group_size <- as.numeric(table(obj@idents))
+      netVisual_circle(
+        obj@net$weight,
+        title.name = paste0(condition, " - interaction strength"),
+        vertex.weight = group_size,
+        weight.scale = TRUE,
+        edge.weight.max = weight_edge_max,
+        edge.width.max = 8,
+        vertex.size.max = 18,
+        vertex.label.cex = 0.75,
+        label.edge = FALSE
+      )
+    }
+  },
+  file.path(outdir, "cellchat_overview_network_weight_circle_all_groups"),
+  width,
+  height,
+  dpi
+)
+
+pair_index <- combn(seq_along(conditions), 2, simplify = FALSE)
+
+save_base_safe(
+  {
+    oldpar <- par(no.readonly = TRUE)
+    on.exit(par(oldpar), add = TRUE)
+    par(mfrow = c(3, 2), mar = c(1, 1, 4, 1), xpd = TRUE)
+    for (pair in pair_index) {
+      a <- pair[[1]]
+      b <- pair[[2]]
+      netVisual_diffInteraction(
+        merged,
+        comparison = c(a, b),
+        measure = "count",
+        weight.scale = TRUE,
+        vertex.size.max = 18,
+        vertex.label.cex = 0.75,
+        edge.width.max = 8,
+        title.name = paste0(conditions[[b]], " vs ", conditions[[a]], " - count")
+      )
+    }
+  },
+  file.path(outdir, "cellchat_overview_pairwise_diff_count_circle"),
+  pair_width,
+  pair_height,
+  dpi
+)
+
+save_base_safe(
+  {
+    oldpar <- par(no.readonly = TRUE)
+    on.exit(par(oldpar), add = TRUE)
+    par(mfrow = c(3, 2), mar = c(1, 1, 4, 1), xpd = TRUE)
+    for (pair in pair_index) {
+      a <- pair[[1]]
+      b <- pair[[2]]
+      netVisual_diffInteraction(
+        merged,
+        comparison = c(a, b),
+        measure = "weight",
+        weight.scale = TRUE,
+        vertex.size.max = 18,
+        vertex.label.cex = 0.75,
+        edge.width.max = 8,
+        title.name = paste0(conditions[[b]], " vs ", conditions[[a]], " - weight")
+      )
+    }
+  },
+  file.path(outdir, "cellchat_overview_pairwise_diff_weight_circle"),
+  pair_width,
+  pair_height,
+  dpi
+)
+
+plot_files <- list.files(outdir, pattern = "\\.(pdf|png)$", full.names = TRUE)
+write.csv(
+  data.frame(file = basename(plot_files), size_bytes = file.info(plot_files)$size, stringsAsFactors = FALSE),
+  file.path(outdir, "cellchat_overview_plot_files.csv"),
+  row.names = FALSE
+)
+write.csv(plot_log, file.path(outdir, "cellchat_overview_plot_log.csv"), row.names = FALSE)
+message("Wrote overview tables to ", tables_dir)
+message("Wrote ", length(plot_files), " overview plot files to ", outdir)
+RS_OVERVIEW
 fi
 
 echo "Full CellChat pipeline finished."
