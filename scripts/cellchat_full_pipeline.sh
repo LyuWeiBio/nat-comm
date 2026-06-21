@@ -827,6 +827,7 @@ contribution_height <- as.numeric(env_default("PIPE_CONTRIBUTION_HEIGHT", "3.0")
 dpi <- as.integer(env_default("PIPE_DPI", "300"))
 
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
 
 compact_theme <- theme(
   plot.title = element_text(hjust = 0.5, size = 10),
@@ -875,6 +876,101 @@ if (is.null(focus_targets)) focus_targets <- celltypes
 
 message("Plotting ", signaling, " sources: ", paste(focus_sources, collapse = ", "))
 message("Plotting ", signaling, " targets: ", paste(focus_targets, collapse = ", "))
+
+pathway_strength_rows <- lapply(conditions, function(condition) {
+  obj <- objects[[condition]]
+  pathways <- dimnames(obj@netP$prob)[[3]]
+  if (is.null(pathways) || !signaling %in% pathways) {
+    return(data.frame(
+      condition = condition,
+      total_strength = 0,
+      source_target = "none",
+      n_nonzero_pairs = 0,
+      stringsAsFactors = FALSE
+    ))
+  }
+  mat <- obj@netP$prob[, , signaling, drop = FALSE][, , 1]
+  idx <- which(mat > 0, arr.ind = TRUE)
+  if (nrow(idx) == 0) {
+    return(data.frame(
+      condition = condition,
+      total_strength = 0,
+      source_target = "none",
+      n_nonzero_pairs = 0,
+      stringsAsFactors = FALSE
+    ))
+  }
+  pairs <- paste(rownames(mat)[idx[, 1]], colnames(mat)[idx[, 2]], sep = " -> ")
+  data.frame(
+    condition = condition,
+    total_strength = sum(mat[idx]),
+    source_target = paste(unique(pairs), collapse = "; "),
+    n_nonzero_pairs = nrow(idx),
+    stringsAsFactors = FALSE
+  )
+})
+pathway_strength_df <- do.call(rbind, pathway_strength_rows)
+pathway_strength_df$condition <- factor(pathway_strength_df$condition, levels = conditions)
+write.csv(
+  pathway_strength_df,
+  file.path(tables_dir, paste0("cellchat_", signaling_file, "_four_group_pathway_strength.csv")),
+  row.names = FALSE
+)
+
+subtitle_pairs <- unique(unlist(strsplit(
+  paste(pathway_strength_df$source_target[pathway_strength_df$source_target != "none"], collapse = "; "),
+  "; ",
+  fixed = TRUE
+)))
+subtitle_pairs <- subtitle_pairs[nzchar(subtitle_pairs)]
+subtitle_text <- if (length(subtitle_pairs) == 0) {
+  "CellChat pathway probability, summed across source-target pairs"
+} else {
+  paste0(
+    "CellChat pathway probability, summed across source-target pairs; nonzero pair",
+    ifelse(length(subtitle_pairs) > 1, "s: ", ": "),
+    paste(subtitle_pairs, collapse = "; ")
+  )
+}
+if (nchar(subtitle_text) > 140) {
+  subtitle_text <- "CellChat pathway probability, summed across source-target pairs"
+}
+max_strength <- max(pathway_strength_df$total_strength, na.rm = TRUE)
+plot_scale <- ifelse(max_strength > 0, max_strength, 1)
+pathway_strength_df$label_y <- ifelse(
+  pathway_strength_df$total_strength > 0,
+  pathway_strength_df$total_strength + plot_scale * 0.06,
+  plot_scale * 0.04
+)
+
+save_gg_safe(
+  ggplot(pathway_strength_df, aes(x = condition, y = total_strength, fill = condition)) +
+    geom_col(width = 0.62, color = "grey25", linewidth = 0.25) +
+    geom_point(size = 2.6, color = "black") +
+    geom_text(aes(y = label_y, label = sprintf("%.4g", total_strength)), size = 4) +
+    scale_fill_manual(values = c(WT_ND = "#7A7A7A", WT_CCD = "#D95F02", KO_ND = "#1B9E77", KO_CCD = "#7570B3")) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.18))) +
+    labs(
+      title = paste0(signaling, " pathway signaling strength across orig.ident groups"),
+      subtitle = subtitle_text,
+      x = NULL,
+      y = paste0(signaling, " pathway strength")
+    ) +
+    theme_classic(base_size = 13) +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(hjust = 0.5, size = 15, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, size = 10),
+      axis.text.x = element_text(size = 12, color = "black"),
+      axis.text.y = element_text(size = 11, color = "black"),
+      axis.title.y = element_text(size = 12),
+      plot.margin = margin(8, 12, 8, 12)
+    ),
+  file.path(outdir, paste0(signaling_file, "_four_group_pathway_strength")),
+  7,
+  4.5,
+  dpi
+)
 
 pair_index <- combn(seq_along(conditions), 2, simplify = FALSE)
 for (pair in pair_index) {
