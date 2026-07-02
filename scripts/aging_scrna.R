@@ -25,7 +25,7 @@ setwd("~/Desktop/old")
 # ---- 1. parameters ----
 samples <- data.frame(
   sample_id = c("WT", "OLD"),     # becomes orig.ident
-  dir       = c("WT", "24mo"),    # Read10X folder (filtered matrix)
+  dir       = c("WT", "18mo"),    # Read10X folder (filtered matrix)
   stringsAsFactors = FALSE
 )
 
